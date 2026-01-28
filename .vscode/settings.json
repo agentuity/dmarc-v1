@@ -1,0 +1,19 @@
+{
+  "files.associations": {
+    "agentuity.json": "jsonc"
+  },
+  "search.exclude": {
+    "**/.git/**": true,
+    "**/node_modules/**": true,
+    "**/bun.lock": true,
+    "**/.agentuity/**": true
+  },
+  "json.schemas": [
+    {
+      "fileMatch": [
+        "agentuity.json"
+      ],
+      "url": "https://agentuity.dev/schema/cli/v1/agentuity.json"
+    }
+  ]
+}

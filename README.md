@@ -1,147 +1,189 @@
-# dmarc-v1
+# DMARC v1 Agent
 
-A new Agentuity project created with `agentuity create`.
+A streamlined DMARC classification agent that uses LLM prompts to analyze DMARC records and output structured JSON results.
 
-## What You Get
+## What It Does
 
-A fully configured Agentuity project with:
-
-- ✅ **TypeScript** - Full type safety out of the box
-- ✅ **Bun runtime** - Fast JavaScript runtime and package manager
-- ✅ **Hot reload** - Development server with auto-rebuild
-- ✅ **Example agent** - Sample "hello" agent to get started
-- ✅ **React frontend** - Pre-configured web interface
-- ✅ **API routes** - Example API endpoints
-- ✅ **Type checking** - TypeScript configuration ready to go
+- **Accepts** DMARC aggregate reports as ZIP/XML files or pre-parsed JSON
+- **Parses** XML reports and extracts DMARC records
+- **Classifies** each record using strict LLM-based rules
+- **Outputs** structured classification with investigation queue
+- **Notifies** via Slack (optional)
 
 ## Project Structure
 
 ```
-my-app/
+dmarc-v1/
 ├── src/
-│   ├── agent/            # Agent definitions
-│   │   └── hello/
-│   │       ├── agent.ts  # Example agent
-│   │       └── index.ts  # Default exports
-│   ├── api/              # API definitions
-│   │   └── index.ts      # Example routes
-│   └── web/              # React web application
-│       ├── public/       # Static assets
-│       ├── App.tsx       # Main React component
-│       ├── frontend.tsx  # Entry point
-│       └── index.html    # HTML template
-├── AGENTS.md             # Agent guidelines
-├── app.ts                # Application entry point
-├── tsconfig.json         # TypeScript configuration
-├── package.json          # Dependencies and scripts
-└── README.md             # Project documentation
+│   ├── agent/
+│   │   └── dmarc-processor/           # Main agent
+│   │       ├── agent.ts                # Agent logic + Slack integration
+│   │       ├── schema.ts               # Input/output schemas
+│   │       └── index.ts                # Export
+│   ├── lib/
+│   │   ├── classification-types.ts     # TypeScript types
+│   │   ├── classification-prompts.ts   # LLM system prompt
+│   │   ├── dmarc-classifier.ts         # Claude API integration
+│   │   ├── dmarc-parser.ts             # ZIP/XML parser
+│   │   └── slack.ts                    # Slack notification
+│   └── api/
+│       └── index.ts                    # POST /api/classify endpoint
+├── CLASSIFICATION.md                   # Detailed documentation
+├── app.ts                              # Application entry point
+├── tsconfig.json                       # TypeScript configuration
+├── package.json                        # Dependencies and scripts
+└── README.md                           # This file
 ```
 
-## Available Commands
+## Setup
 
-After creating your project, you can run:
-
-### Development
-
+1. **Install dependencies**
 ```bash
-bun dev
+bun install
 ```
 
-Starts the development server at `http://localhost:3500`
-
-### Build
-
+2. **Set environment variables**
 ```bash
-bun build
+# Agentuity automatically provides ANTHROPIC_API_KEY
+# Only set if running locally:
+export ANTHROPIC_API_KEY="your-api-key"  # Optional (auto-provided)
+
+# Optional Slack integration:
+export SLACK_BOT_TOKEN="xoxb-..."
+export DMARC_CHANNEL_ID="C1234567890"
 ```
 
-Compiles your application into the `.agentuity/` directory
-
-### Type Check
-
+3. **Run development server**
 ```bash
-bun typecheck
+bun run dev
 ```
 
-Runs TypeScript type checking
+## Usage
 
-### Deploy to Agentuity
+The agent accepts two input formats:
+
+### Option 1: Send a ZIP/XML file (base64-encoded)
 
 ```bash
+# Convert zip file to base64
+BASE64_CONTENT=$(base64 -i dmarc-report.zip)
+
+curl -X POST http://localhost:8787/api/classify \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"file\": {
+      \"content\": \"$BASE64_CONTENT\",
+      \"filename\": \"dmarc-report.zip\"
+    }
+  }"
+```
+
+### Option 2: Send pre-parsed DMARC records
+
+```bash
+curl -X POST http://localhost:8787/api/classify \
+  -H "Content-Type: application/json" \
+  -d '{
+    "records": [
+      {
+        "source_ip": "192.0.2.1",
+        "count": 150,
+        "policy_evaluated": {
+          "disposition": "none",
+          "dkim": "pass",
+          "spf": "pass"
+        },
+        "identifiers": {
+          "header_from": "example.com",
+          "envelope_from": "example.com"
+        },
+        "auth_results": {
+          "dkim": [{"domain": "example.com", "result": "pass"}],
+          "spf": [{"domain": "example.com", "result": "pass"}]
+        }
+      }
+    ]
+  }'
+```
+
+## Response Format
+
+```json
+{
+  "summary": {
+    "total_records": 1,
+    "investigate_count": 0,
+    "monitor_count": 0,
+    "all_passing": true
+  },
+  "records": [
+    {
+      "source_ip": "192.0.2.1",
+      "status": "ok",
+      "reason_codes": ["DMARC_PASS"],
+      "confidence": 1.0
+    }
+  ],
+  "investigation_queue": [],
+  "slack_delivered": true
+}
+```
+
+## Key Features
+
+### ✅ What It Does
+
+- **Parses** DMARC aggregate reports from ZIP/XML files
+- **Classifies** DMARC records using LLM (Claude)
+- Follows strict classification rules (see CLASSIFICATION.md)
+- Outputs structured JSON only
+- Sends Slack notifications (optional)
+- Deterministic results (temperature=0)
+
+### ❌ What It Doesn't Do
+
+- Perform IP lookups or enrichment
+- Store results or maintain state
+- Make DNS queries or ASN lookups
+- Process DMARC forensic reports (only aggregate reports)
+
+## Development
+
+```bash
+# Run dev server
+bun run dev
+
+# Build project
+bun run build
+
+# Type check
+bun run typecheck
+
+# Deploy
 bun run deploy
 ```
 
-Deploys your application to the Agentuity cloud
+## Documentation
+
+See [CLASSIFICATION.md](./CLASSIFICATION.md) for detailed documentation including:
+- Classification rules
+- Reason codes
+- Investigation priority logic
+- System prompt details
+
+## Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Auto | Automatically provided by Agentuity |
+| `SLACK_BOT_TOKEN` | ❌ | Slack bot token (optional) |
+| `DMARC_CHANNEL_ID` | ❌ | Slack channel ID (optional) |
 
 ## Next Steps
 
-After creating your project:
+This agent is designed to be the first stage in a DMARC processing pipeline. The `investigation_queue` output can feed into downstream services for:
 
-1. **Customize the example agent** - Edit `src/agent/hello/agent.ts`
-2. **Add new agents** - Create new folders in `src/agent/`
-3. **Add new APIs** - Create new folders in `src/api/`
-4. **Add Web files** - Create new routes in `src/web/`
-5. **Customize the UI** - Edit `src/web/app.tsx`
-6. **Configure your app** - Modify `app.ts` to add middleware, configure services, etc.
-
-## Creating Custom Agents
-
-Create a new agent by adding a folder in `src/agent/`:
-
-```typescript
-// src/agent/my-agent/agent.ts
-import { createAgent } from '@agentuity/runtime';
-import { s } from '@agentuity/schema';
-
-const agent = createAgent({
-	description: 'My amazing agent',
-	schema: {
-		input: s.object({
-			name: s.string(),
-		}),
-		output: s.string(),
-	},
-	handler: async (_ctx, { name }) => {
-		return `Hello, ${name}! This is my custom agent.`;
-	},
-});
-
-export default agent;
-```
-
-## Adding API Routes
-
-Create custom routes in `src/api/`:
-
-```typescript
-// src/api/my-agent/route.ts
-import { createRouter } from '@agentuity/runtime';
-import myAgent from './agent';
-
-const router = createRouter();
-
-router.get('/', async (c) => {
-	const result = await myAgent.run({ message: 'Hello!' });
-	return c.json(result);
-});
-
-router.post('/', myAgent.validator(), async (c) => {
-	const data = c.req.valid('json');
-	const result = await myAgent.run(data);
-	return c.json(result);
-});
-
-export default router;
-```
-
-## Learn More
-
-- [Agentuity Documentation](https://agentuity.dev)
-- [Bun Documentation](https://bun.sh/docs)
-- [Hono Documentation](https://hono.dev/)
-- [Zod Documentation](https://zod.dev/)
-
-## Requirements
-
-- [Bun](https://bun.sh/) v1.0 or higher
-- TypeScript 5+
+- IP reputation lookups
+- ASN and geolocation analysis
+- Historical trend analysis
+- Automated remediation

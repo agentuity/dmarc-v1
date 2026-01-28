@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agentuity.dev/schema/cli/v1/agentuity.json",
+  // the project id
+  "projectId": "proj_664b47102e55b31c36acded65b07d38a",
+  // the organization id
+  "orgId": "org_2u8RgDTwcZWrZrZ3sZh24T5FCtz",
+  // the region identifier that the project is deployed into
+  "region": "use",
+  // the deployment configuration
+  "deployment": {
+    "resources": {
+      "memory": "500Mi",
+      "cpu": "500m",
+      "disk": "500Mi",
+      "storage": "ag-f0hcb4grz2oe",
+      "db": "addie_pataki"
+    }
+  }
+}
