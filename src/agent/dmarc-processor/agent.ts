@@ -7,7 +7,7 @@ import { createAgent, type AgentContext } from '@agentuity/runtime';
 import { DmarcProcessorInputSchema, DmarcProcessorOutputSchema } from './schema';
 import { classifyDmarcRecords } from '@lib/dmarc-classifier';
 import { sendToSlack } from '@lib/slack';
-import { parseDmarcInput } from '@lib/dmarc-parser';
+import { parseDmarcInput, type ParsedDmarcReport } from '@lib/dmarc-parser';
 import type { DmarcRecord } from '@lib/classification-types';
 
 const agent = createAgent('dmarc-processor', {
@@ -19,6 +19,7 @@ const agent = createAgent('dmarc-processor', {
 	handler: async (ctx: AgentContext, input) => {
 		try {
 			let records: DmarcRecord[];
+			let reportMetadata: ParsedDmarcReport['metadata'] | undefined;
 
 			// Determine input type and extract records
 			if ('records' in input) {
@@ -28,7 +29,7 @@ const agent = createAgent('dmarc-processor', {
 				});
 				records = input.records;
 			} else if ('file' in input) {
-				// Mode 2: Parse from file (zip or XML)
+				// Mode 2: Parse from file (zip, gzip, or XML)
 				ctx.logger.info('Parsing DMARC file', {
 					filename: input.file.filename || 'unknown',
 				});
@@ -44,6 +45,7 @@ const agent = createAgent('dmarc-processor', {
 				});
 
 				records = parsed.records;
+				reportMetadata = parsed.metadata;
 			} else {
 				throw new Error('Invalid input: must provide either "records" or "file"');
 			}
@@ -73,6 +75,29 @@ const agent = createAgent('dmarc-processor', {
 				ctx.logger.warn('Failed to send Slack notification', {
 					error: slackError instanceof Error ? slackError.message : String(slackError),
 				});
+			}
+
+			// Store results in KV for later retrieval
+			if (reportMetadata) {
+				try {
+					const domain = records[0]?.identifiers?.header_from || 'unknown';
+					const org = reportMetadata.orgName || 'unknown';
+					const reportId = reportMetadata.reportId || Date.now().toString();
+					const kvKey = `${domain}_${org}_${reportId}`;
+
+					await ctx.kv.set('dmarc-reports', kvKey, {
+						summary: classification.summary,
+						investigation_queue: classification.investigation_queue,
+						metadata: reportMetadata,
+						processed_at: new Date().toISOString(),
+					});
+
+					ctx.logger.info('DMARC report stored in KV', { key: kvKey });
+				} catch (kvError) {
+					ctx.logger.warn('Failed to store DMARC report in KV', {
+						error: kvError instanceof Error ? kvError.message : String(kvError),
+					});
+				}
 			}
 
 			return {

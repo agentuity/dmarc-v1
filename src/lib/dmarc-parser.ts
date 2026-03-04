@@ -4,6 +4,7 @@
  */
 
 import JSZip from 'jszip';
+import { gunzipSync } from 'node:zlib';
 import { XMLParser } from 'fast-xml-parser';
 import type { DmarcRecord } from './classification-types';
 
@@ -164,18 +165,25 @@ export async function parseDmarcInput(input: {
 	xmlContent?: string;
 }): Promise<ParsedDmarcReport> {
 	if (input.base64Content) {
+		const binaryContent = Buffer.from(input.base64Content, 'base64');
+
 		// Try to parse as zip first
 		try {
 			return await parseDmarcZip(input.base64Content);
 		} catch (zipError) {
-			// If zip parsing fails, try as raw XML (might be base64-encoded XML)
+			// Try gzip decompression (common for .xml.gz DMARC reports)
 			try {
-				const xmlContent = Buffer.from(input.base64Content, 'base64').toString('utf-8');
-				return parseDmarcXml(xmlContent);
-			} catch (xmlError) {
-				throw new Error(
-					`Failed to parse DMARC content: ${zipError instanceof Error ? zipError.message : String(zipError)}`
-				);
+				const decompressed = gunzipSync(binaryContent);
+				return parseDmarcXml(decompressed.toString('utf-8'));
+			} catch (gzipError) {
+				// Fall back to raw XML (might be base64-encoded XML)
+				try {
+					return parseDmarcXml(binaryContent.toString('utf-8'));
+				} catch (xmlError) {
+					throw new Error(
+						`Failed to parse DMARC content: ${zipError instanceof Error ? zipError.message : String(zipError)}`
+					);
+				}
 			}
 		}
 	}
